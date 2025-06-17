@@ -7,5 +7,5 @@
     "age": "float",
     "sex": "str"
   },
-  "log_level": "error"
+  "log_level": "debug"
 }

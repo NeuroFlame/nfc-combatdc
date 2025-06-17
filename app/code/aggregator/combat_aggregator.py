@@ -1,3 +1,4 @@
+import logging
 import os
 from typing import Dict, Any
 from nvflare.apis.shareable import Shareable
@@ -44,8 +45,8 @@ class DCCombatAggregator(Aggregator):
             self.site_results[contribution_round] = {}
             
         if self.logger is None:
-            computation_params: ComputationParamDTO = get_computation_parameters(fl_ctx)
-            self.logger = NvFlareLogger('aggregator.log', get_output_directory_path(fl_ctx), computation_params.get('log_level'))
+            logging.info(f'log_level for aggregator: {fl_ctx.get_prop(key="log_level", default=None)}')
+            self.logger = NvFlareLogger('aggregator.log', get_output_directory_path(fl_ctx), fl_ctx.get_prop(key="log_level", default="info"))
 
         # Store the result for the site using its identity name as the key
         self.site_results[contribution_round][site_name] = site_result["result"]
@@ -74,12 +75,12 @@ class DCCombatAggregator(Aggregator):
                 outgoing_shareable['result'] = agg_result['output']
             
             elif contribution_round == 1:
-                agg_result = am.combat_remote_step2(self.site_results[contribution_round], self.agg_cache)
+                agg_result = am.combat_remote_step2(self.site_results[contribution_round], self.agg_cache, self.logger)
                 self.agg_cache.update(agg_result['cache'])
                 outgoing_shareable['result'] = agg_result['output']
             
             elif contribution_round == 2:
-                agg_result = am.combat_remote_step3(self.site_results[contribution_round], self.agg_cache)
+                agg_result = am.combat_remote_step3(self.site_results[contribution_round], self.agg_cache, self.logger)
                 self.agg_cache.update(agg_result['cache'])
                 outgoing_shareable['result'] = agg_result['output']
                 self.logger.close()

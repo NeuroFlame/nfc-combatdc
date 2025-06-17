@@ -53,7 +53,9 @@ class DCCombatController(Controller):
         remote_name+='.log'
         output_path = get_output_directory_path(fl_ctx)
 
-        self.logger = NvFlareLogger(remote_name, output_path, 'info')
+        log_level = fl_ctx.get_prop('COMPUTATION_PARAMETERS')['log_level']
+        fl_ctx.set_prop(key="log_level", value=log_level)
+        self.logger = NvFlareLogger(remote_name, output_path, log_level)
 
     def control_flow(self, abort_signal: Signal, fl_ctx: FLContext) -> None:
         """

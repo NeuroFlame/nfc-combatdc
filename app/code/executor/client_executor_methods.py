@@ -165,8 +165,6 @@ def perform_task_step2(sharebale: Shareable, config: ConfigDTO):
     mat_X, mat_Y = validate_and_get_inputs(covar_url, data_url, combat_alg_type, config.computation_params, config.logger)
     config.logger.info('Completed Site Data Validation')
     
-    config.logger.info('mat_X: ', mat_X, 'mat_Y: ', mat_Y)
-    
     X_cat = identify_categorical_covariates(mat_X)
     
 
@@ -174,7 +172,7 @@ def perform_task_step2(sharebale: Shareable, config: ConfigDTO):
         mat_X = encode_covariates(mat_X, X_cat)
 
     site_name = config.site_name
-    site_index = parse_clientId(site_name)
+    site_index = agg_results['site_indexes'][site_name]
     
     X = mat_X
     Y = mat_Y.values

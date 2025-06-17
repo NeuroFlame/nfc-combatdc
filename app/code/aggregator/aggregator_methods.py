@@ -6,12 +6,16 @@ from utils.logger import NvFlareLogger
 def combat_remote_step1(site_results: Dict[str, Any]):
     site_ids = list(site_results.keys())
     
-    site_covar_list = [
-        '{}_{}'.format('site', label) for _, label in enumerate(sorted(site_ids))    
-    ]
+    site_covar_list = []
     
+    site_indexes={}
+    for site_index,site_id in enumerate(sorted(site_ids)):
+        site_covar_list.append('{}_{}'.format('site', site_id))
+        site_indexes[site_id] = site_index+1
+        
     output_dict = {
-        'site_covar_list': sorted(site_covar_list)
+        'site_covar_list': sorted(site_covar_list),
+        'site_indexes': site_indexes
     }
     
     cache_dict = {}
@@ -34,51 +38,14 @@ def combat_remote_step2(site_results: Dict[str, Any], agg_cache_dict: Dict[str, 
         raise Exception("Unequal lambdas at local sites")
     
     beta_vector_1 = beta_vector_1 + np.unique(all_lambdas) * np.eye(beta_vector_1.shape[0])   
-    logger.debug('beta_vector_1: ', beta_vector_1)
     
-    assert isinstance(beta_vector_1, np.ndarray), "beta_vector_1 must be a NumPy array"
-    assert beta_vector_1.shape == (6, 6), f"Expected beta_vector_1.shape == (6,6), but got {beta_vector_1.shape}"
+    beta_vectors = np.matrix.transpose(
+    sum([
+        np.matmul(np.linalg.inv(beta_vector_1),
+                    site_results[site]["Xtransposey_local"])
+        for site in site_results.keys()
+    ]))
 
-    
-    # 2) Compute the explicit inverse of β₁ once.
-    inv_beta = np.linalg.inv(beta_vector_1)
-    logger.debug('inv_beta: ', inv_beta)
-    #    inv_beta.shape == (6, 6)
-
-    # 3) Initialize a (6×17) accumulator for summing each site’s contribution.
-    sum_matrix = np.zeros((6, 17), dtype=float)
-
-    # 4) Loop over sites in a deterministic order; for each site, do exactly:
-    #      inv_beta @ XTy_local  (shape 6×6 @ shape 6×17 → shape 6×17),
-    #    then add that to sum_matrix.
-    for site in sorted(site_results.keys()):
-        logger.debug('site: ', site)
-        
-        XTy_local = np.asarray(site_results[site]["Xtransposey_local"])
-        
-        logger.debug('  XTy_local: ', XTy_local)
-        assert isinstance(XTy_local, np.ndarray), (
-            f"site_results[{site}]['Xtransposey_local'] must be a NumPy array"
-        )
-        assert XTy_local.shape == (6, 17), (
-            f"For site '{site}', expected XTy_local.shape == (6,17), but got {XTy_local.shape}"
-        )
-        # 4a) Compute inv_beta @ XTy_local exactly as in the original code.
-        solved = inv_beta @ XTy_local
-        #    solved.shape == (6, 17)
-        logger.debug('  solved: ', solved)
-        
-        # 4b) Accumulate into sum_matrix (still shape 6×17).
-        sum_matrix += solved
-        logger.debug('  sum_matrix: ', sum_matrix)
-
-    # 5) After summing all sites, sum_matrix is the elementwise sum of each inv(β₁) @ XTy_local.
-    #    Finally, transpose to get shape (17×6) just like your original:
-    #       beta_vectors = np.matrix.transpose(sum([...]))
-    beta_vectors = sum_matrix.T  # shape = (17, 6)
-
-    # 6) logger.debug or return beta_vectors.
-    logger.debug(beta_vectors)
     B_hat = beta_vectors.T
 
     n_batch =  len(sites)
@@ -86,7 +53,6 @@ def combat_remote_step2(site_results: Dict[str, Any], agg_cache_dict: Dict[str, 
     sample_per_batch = np.array([ site_results[site]["local_sample_count"] for site in sites])
 
     n_sample = sum(site_results[site]["local_sample_count"] for site in sites)
-    
     site_array = []
     for site in sites:
         site_array = np.concatenate((site_array, [int(site_results[site]["site_index"])]*int(site_results[site]["local_sample_count"])), axis=0)
@@ -103,7 +69,6 @@ def combat_remote_step2(site_results: Dict[str, Any], agg_cache_dict: Dict[str, 
         "stand_mean": stand_mean.tolist(),
         "site_array": site_array.tolist(),
     }
-    logger.debug('agg_results: ', agg_results)
 
     agg_cache_dict.update({
         "avg_beta_vector": B_hat.tolist(),

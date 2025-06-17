@@ -12,7 +12,7 @@ echo "Using REMOTE_WORKSPACE: $REMOTE_WORKSPACE"
 MSYS_NO_PATHCONV=1 docker run --rm -it \
     -e LOG_LEVEL="error" \
     --ipc=host --ulimit memlock=-1 --ulimit stack=67108864 \
-    --name nvflare-dccombat \
+    --name nvflare-dccombat-dev \
     -v "$LOCAL_WORKSPACE:$REMOTE_WORKSPACE" \
     -w "$REMOTE_WORKSPACE" \
-    nvflare-dccombat:latest
+    nvflare-dccombat-dev:latest

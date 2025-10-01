@@ -31,20 +31,33 @@ def combat_remote_step2(site_results: Dict[str, Any], agg_cache_dict: Dict[str, 
     sites = sorted(list(site_results.keys()))
     beta_vector_0 = [ np.array(site_results[site]["XtransposeX_local"]) for site in sites]
     logger.debug('beta_vector_0: ', beta_vector_0)
+
     beta_vector_1 = sum(beta_vector_0)
     
     all_lambdas = [site_results[site]["lambda_value"] for site in sites]
-    if np.unique(all_lambdas).shape[0] != 1:
+    unique_lams = np.unique(all_lambdas)
+    if unique_lams.shape[0] != 1:
         raise Exception("Unequal lambdas at local sites")
     
-    beta_vector_1 = beta_vector_1 + np.unique(all_lambdas) * np.eye(beta_vector_1.shape[0])   
+    trace = np.trace(beta_vector_1)
+    epsilon = 1e-6
+    λ_reg = epsilon * trace / beta_vector_1.shape[0]
+    beta_vector_1 += λ_reg * np.eye(beta_vector_1.shape[0])
     
-    beta_vectors = np.matrix.transpose(
-    sum([
-        np.matmul(np.linalg.inv(beta_vector_1),
-                    site_results[site]["Xtransposey_local"])
-        for site in site_results.keys()
-    ]))
+    n_features = beta_vector_1.shape[0]
+    logger.debug('beta_vector_1: ', beta_vector_1)
+
+    inv_beta = np.linalg.inv(beta_vector_1)
+    first_XTy = np.asarray(site_results[sites[0]]["Xtransposey_local"])
+    n_features, n_samples = first_XTy.shape
+
+    sum_matrix = np.zeros((n_features, n_samples), dtype=float)
+    for s in sites:
+        XTy = np.asarray(site_results[s]["Xtransposey_local"])
+        sum_matrix += inv_beta @ XTy
+
+    beta_vectors = sum_matrix.T
+    logger.info('beta_vectors: ', beta_vectors)
 
     B_hat = beta_vectors.T
 

@@ -32,8 +32,11 @@ class DCCombatAggregator(Aggregator):
         :param fl_ctx: The federated learning context for this run.
         :return: Boolean indicating if the result was successfully accepted.
         """
-        site_name = site_result.get_peer_prop(
+        site_id = site_result.get_peer_prop(
             key=ReservedKey.IDENTITY_NAME, default=None)
+        computation_parameters = fl_ctx.get_prop(key="COMPUTATION_PARAMETERS", default={})
+        site_id_name_map = computation_parameters.get("site_id_name_map", {})
+        site_name = site_id_name_map.get(site_id, site_id)
         contribution_round = fl_ctx.get_prop(key="CURRENT_ROUND", default=None)
         
         if contribution_round is None or site_name is None:

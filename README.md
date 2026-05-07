@@ -37,7 +37,7 @@ Below are the key steps in the algorithm:
 In our decentralized environment, we have two types of nodes: The first type is the aggregator node, also known as the remote node, which does not hold any data and acts as a storage of intermediate results and performs simple operations such as aggregation. The second node type is the local/regional node where datasets are located.
 
 ### Stage 1 - Local Summary Extraction:
-1. Each participating site runs COINSTAC’s decentralized regression to obtain initial β‑coefficients.
+1. Each participating site runs a local regression to obtain initial β‑coefficients by computing local cross-product matrices (XᵀX and Xᵀy).
 2. Using those coefficients, the site computes its local mean and local variance.
 3. These summary statistics—never raw data—are securely sent to the remote aggregator node.
 
@@ -54,7 +54,7 @@ In our decentralized environment, we have two types of nodes: The first type is 
 ## Data Format Specification:
 
 The computation requires two `csv` files as input:
-1. **Covariates File (`CatCovariates.csv`)**
+1. **Covariates File (`CatCovariate.csv`)**
 2. **Dependent Variables File (`Data.csv`)**
 
 Both files must follow a consistent format, though the specific covariates and dependents may vary from study to study. The computation expects these files to match the covariate and dependent variable names specified in the [`parameters.json`](test_data/server/parameters.json) file.
@@ -113,8 +113,8 @@ Example: [test_data/server/parameters.json](test_data/server/parameters.json)
 | `covariate_file` | `string` | ✅ | Covariate file name inside edge node data directory | `"CatCovariate.csv"` |
 | `data_file` | `string` | ✅ | Dependent file name inside edge node data directory | `"Data.csv"` |
 | `combat_algo` | `string` | ✅ | Which type of algorithm to implement during computation | `combatDC` or `combatMegaDC`|
-| `covariates_types` | `object` | ✅ | Datatypes of each column values in covariates file | `3` |
-| `covariates_types.['key_name']` | `string` | ✅ | primitive datatype names supported in `Python 3.8`  | `int`, `float`, `string` or `bool` |
+| `covariates_types` | `object` | ✅ | Maps each covariate column name to its type. Categorical (`str`) columns are dummy-encoded automatically. | `{"isControl": "bool", "age": "float", "sex": "str"}` |
+| `covariates_types.['key_name']` | `string` | ✅ | Primitive type name for each covariate column. | `"int"`, `"float"`, `"str"`, `"bool"` |
 
 
 > Note: In the dependent file, each cell value is assumed to be either empty or of type `float`.
@@ -130,7 +130,7 @@ Pass the environment variable LOG_LEVEL to the application with supported values
 
 ## Output:
 
-Once the computation is completed, it generates the harmonized, site‑dependent CSV files in the `test_output/{site_name}` directory.
+Once the computation is completed, each site's output directory contains a harmonized CSV file named `harmonized_site_{site_index}_data.csv`. This file has the same column structure as the input data file, with site-batch effects removed and values on the original measurement scale.
 
 ## Developer Instructions:
 1. Clone the repository

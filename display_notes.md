@@ -78,8 +78,8 @@ Both files must reside in the site's data directory, and row order must be consi
 The computation runs four federated rounds across three harmonization stages:
 
 1. **Round 0 — Initialization (all sites)**:
-   - Each site validates that the covariate and data files exist and caches their paths together with the chosen algorithm type.
-   - No data values are transmitted at this stage.
+   - Each site caches its covariate and data file paths together with the chosen algorithm type.
+   - No data values are read or transmitted at this stage.
 
 2. **Round 1 — Local Regression (all sites)**:
    - If `combatMegaDC` is selected, missing values in the data matrix are interpolated using the covariate matrix before further processing.
@@ -99,7 +99,7 @@ The computation runs four federated rounds across three harmonization stages:
 #### Assumptions
 
 - The `covariate_file` and `data_file` specified in `parameters.json` are present in each site's data directory.
-- All sites provide covariate and data files with identical column headers; the computation raises an error if column names are inconsistent across sites.
+- Each site's covariate file must contain all columns listed in `covariates_types`; the computation raises a validation error locally if any expected column is missing.
 - Row order is consistent between the covariate file and the data file at each site.
 - All values in the data file are either numeric (`float`) or empty (NaN). Empty values are only supported with `combatMegaDC`.
 - The `covariates_types` dictionary covers every column in the covariate file.

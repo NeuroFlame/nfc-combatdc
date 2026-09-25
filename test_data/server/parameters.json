@@ -7,5 +7,6 @@
     "age": "float",
     "sex": "str"
   },
-  "log_level": "debug"
+  "log_level": "debug",
+  "share_site_summaries": true
 }

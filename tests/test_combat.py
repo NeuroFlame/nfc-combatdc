@@ -15,6 +15,7 @@ from computation import local_math, remote_math  # noqa: E402
 from computation.inputs import load_inputs  # noqa: E402
 from computation.results import (  # noqa: E402
     HARMONIZED_DATA_FILE,
+    RESULTS_PAGE_FILE,
     write_harmonized_data,
 )
 from computation.types import (  # noqa: E402
@@ -132,7 +133,10 @@ class CombatWorkflowTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as output_dir:
             write_harmonized_data(pooled, states["site1"], output_dir, LOGGER)
             written = pd.read_csv(os.path.join(output_dir, HARMONIZED_DATA_FILE))
+            with open(os.path.join(output_dir, RESULTS_PAGE_FILE)) as page:
+                results_page = page.read()
 
+        self.assertIn(f'href="{HARMONIZED_DATA_FILE}"', results_page)
         self.assertEqual(list(written.columns), list(harmonized["site1"].columns))
         np.testing.assert_allclose(
             written.to_numpy(), harmonized["site1"].to_numpy(), rtol=1e-12

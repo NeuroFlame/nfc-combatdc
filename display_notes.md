@@ -107,7 +107,7 @@ The computation runs four federated rounds across three harmonization stages:
 
 #### Output Description
 
-- **Output file**: `harmonized_data.csv` — written to each site's output directory at the end of Round 3.
+- **Output files**: `harmonized_data.csv`, plus an `index.html` results page linking to it — written to each site's output directory at the end of Round 3.
 
 The output file contains the harmonized version of the site's dependent variable measurements. It has the same column structure as the input data file (one column per ROI), with site-batch additive and multiplicative effects removed. Values are on the original measurement scale, ready for pooled downstream analysis.
 

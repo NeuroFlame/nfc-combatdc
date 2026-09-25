@@ -43,13 +43,13 @@ sending a features × total-samples matrix to every site.
 
 - **Output file** is `harmonized_data.csv` (was
   `harmonized_site_{site_index}_data.csv`); each site already has its own
-  output directory. The CSV header now contains the plain input column names;
+  output directory. The `index.html` results page added in #4 links to it. The CSV header now contains the plain input column names;
   the old header wrote them as tuple strings such as
   `"('Left-Lateral-Ventricle',)"`.
 - **Validation messages** list the missing covariate columns and invalid rows,
   and an unknown `combat_algo` or column type is rejected up front.
-- **Logging** uses the framework logger (`log_level` parameter) instead of the
-  JSON logger and `LOG_LEVEL` environment variable. Data values are no longer
+- **Logging** uses the framework logger instead of the JSON logger. The
+  `log_level` computation parameter added in #4 is read by the framework. Data values are no longer
   logged.
 - **Unused code removed**: numba regression helpers and unused
   empirical-Bayes prior computations. None fed into the output.

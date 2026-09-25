@@ -123,7 +123,7 @@ The framework writes each site's messages to `<site-id>.log` in that site's outp
 
 ## Output:
 
-Once the computation is completed, each site's output directory contains a harmonized CSV file named `harmonized_data.csv`. This file has the same column structure as the input data file, with site-batch effects removed and values on the original measurement scale.
+Once the computation is completed, each site's output directory contains a harmonized CSV file named `harmonized_data.csv` and an `index.html` results page linking to it. This file has the same column structure as the input data file, with site-batch effects removed and values on the original measurement scale.
 
 ## Developer Instructions:
 The computation logic lives in [`app/code/computation/`](app/code/computation/). The boilerplate owns `app/code/framework/`, `app/code/runtime/`, `app/config/`, `system/`, and the Dockerfiles; update those only by re-running the boilerplate's `scripts/migrate_computation.py`.

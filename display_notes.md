@@ -77,13 +77,12 @@ Both files must reside in the site's data directory, and row order must be consi
 
 The computation runs four federated rounds across three harmonization stages:
 
-1. **Round 0 — Initialization (all sites)**:
-   - Each site caches its covariate and data file paths together with the chosen algorithm type.
-   - No data values are read or transmitted at this stage.
+1. **Round 0 — Validation and Preparation (all sites)**:
+   - Each site reads and validates its covariate and data files, dummy-encodes categorical covariates, and, if `combatMegaDC` is selected, interpolates missing values in the data matrix using the covariate matrix.
+   - The controller assigns one site-indicator column per participating site. No data values are transmitted at this stage.
 
 2. **Round 1 — Local Regression (all sites)**:
-   - If `combatMegaDC` is selected, missing values in the data matrix are interpolated using the covariate matrix before further processing.
-   - Each site dummy-encodes categorical covariates, augments the design matrix with a site-indicator column, and computes the local cross-product matrices **XᵀX** and **Xᵀy**.
+   - Each site augments its design matrix with the site-indicator columns and computes the local cross-product matrices **XᵀX** and **Xᵀy**.
    - The controller aggregates these matrices across all sites, solves the global normal equations to obtain grand-mean regression coefficients (**B̂**), and broadcasts the global parameters back to every site.
 
 3. **Round 2 — Variance Estimation (all sites)**:
@@ -92,7 +91,7 @@ The computation runs four federated rounds across three harmonization stages:
 
 4. **Round 3 — Harmonization and Output (all sites)**:
    - Each site standardizes its data using the global grand mean and pooled variance.
-   - Site-specific additive (γ) and multiplicative (δ) batch effects are estimated via parametric empirical Bayes.
+   - Site-specific additive (γ) and multiplicative (δ) batch effects are estimated via non-parametric empirical Bayes.
    - The estimated effects are removed from the data, and the harmonized measurements are written to disk as a CSV file.
 
 
@@ -108,7 +107,7 @@ The computation runs four federated rounds across three harmonization stages:
 
 #### Output Description
 
-- **Output file**: `harmonized_site_{site_index}_data.csv` — written to each site's output directory at the end of Round 3.
+- **Output file**: `harmonized_data.csv` — written to each site's output directory at the end of Round 3.
 
 The output file contains the harmonized version of the site's dependent variable measurements. It has the same column structure as the input data file (one column per ROI), with site-batch additive and multiplicative effects removed. Values are on the original measurement scale, ready for pooled downstream analysis.
 

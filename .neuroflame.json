@@ -1,0 +1,17 @@
+{
+  "manifestVersion": 1,
+  "computation": {
+    "version": "0.1.0"
+  },
+  "compatibility": {
+    "computationApiVersion": "0.1.0",
+    "boilerplateVersion": "0.1.0"
+  },
+  "image": {
+    "title": "nfc-combatdc",
+    "repository": "coinstacteam/nfc-combatdc",
+    "floatingTag": "latest",
+    "tagPrefix": "",
+    "source": "https://github.com/NeuroFlame/neuroflame_computation_combatdc"
+  }
+}

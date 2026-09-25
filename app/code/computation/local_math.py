@@ -3,73 +3,110 @@
 import math
 import secrets
 from dataclasses import replace
-from typing import List
+from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 import numpy.linalg as la
 import pandas as pd
 import statsmodels.api as sm
 from framework import with_state
-from sklearn.preprocessing import OneHotEncoder
 from statsmodels.regression.linear_model import OLS
 
 from .types import (
+    DEFAULT_MIN_SITE_SUMMARY_N,
+    DEFAULT_SHARE_SITE_SUMMARIES,
     CombatType,
+    DesignLayout,
     GlobalRegression,
+    HarmonizationResult,
     LocalCrossProducts,
     LocalVariance,
     PooledVariance,
-    SiteColumns,
+    ROISummary,
     SiteInputs,
     SiteRegistration,
     SiteState,
+    SiteSummaryShare,
 )
 
 LAMBDA_VALUE = 0.0
 
 
-def prepare_site(inputs: SiteInputs):
-    """Encode covariates, interpolate missing data, and register the site.
+def prepare_site(
+    inputs: SiteInputs, categorical_levels: Optional[Dict[str, List[str]]] = None
+):
+    """Register the site and report the categorical levels it observes.
 
     Args:
         inputs: Validated site inputs.
+        categorical_levels: Declared levels per categorical covariate; levels of
+            declared covariates are not reported.
 
     Returns:
-        The site's registration token, caching the prepared inputs as state.
+        The site's registration, caching the validated inputs as state.
     """
-    covariates = inputs.covariates
-    covariate_categories = identify_categorical_covariates(covariates)
-    if str in covariate_categories:
-        covariates = encode_covariates(covariates, covariate_categories)
+    declared = categorical_levels or {}
+    observed_levels = {
+        name: sorted(set(inputs.covariates[name].astype(str)))
+        for name in inputs.categorical_columns
+    }
 
-    data_values = inputs.data.values
-    if inputs.combat_algo == CombatType.COMBAT_MEGA_DC:
-        data_values = interpolate_missing_data(data_values.T, covariates.to_numpy()).T
-    data = pd.DataFrame(data_values, columns=inputs.data.columns)
+    missing_counts = inputs.data.isna().sum()
+    interpolated_counts = {
+        str(column): int(count) for column, count in missing_counts.items() if count
+    }
 
     token = secrets.token_hex(16)
     return with_state(
-        SiteRegistration(token=token),
-        SiteState(token=token, covariates=covariates, data=data),
+        SiteRegistration(
+            token=token,
+            category_levels={
+                name: levels
+                for name, levels in observed_levels.items()
+                if name not in declared
+            },
+        ),
+        SiteState(
+            token=token,
+            covariates=inputs.covariates,
+            data=inputs.data,
+            combat_algo=str(inputs.combat_algo.value),
+            categorical_columns=list(inputs.categorical_columns),
+            interpolated_counts=interpolated_counts,
+            observed_levels=observed_levels,
+        ),
     )
 
 
-def compute_local_cross_products(site_columns: SiteColumns, state: SiteState):
-    """Add site-indicator columns and compute the local XᵀX and Xᵀy.
+def compute_local_cross_products(layout: DesignLayout, state: SiteState):
+    """Encode covariates, interpolate missing data, and compute XᵀX and Xᵀy.
 
     Args:
-        site_columns: Site-indicator columns assigned by the aggregator.
-        state: Prepared site inputs.
+        layout: Design layout assigned by the aggregator.
+        state: Validated site inputs.
 
     Returns:
-        The local cross products, caching the site columns as state.
+        The local cross products, caching the encoded covariates, the
+        interpolated data, and the layout as state.
     """
-    state = replace(state, site_columns=site_columns)
-    design_values = build_design(state).to_numpy(dtype=float)
+    covariates = encode_covariates(state.covariates, layout.category_levels)
     data_values = state.data.to_numpy(dtype=float)
+    if state.combat_algo == CombatType.COMBAT_MEGA_DC:
+        data_values = interpolate_missing_data(
+            data_values.T, covariates.to_numpy(dtype=float)
+        ).T
+    state = replace(
+        state,
+        covariates=covariates,
+        data=pd.DataFrame(data_values, columns=state.data.columns),
+        layout=layout,
+    )
 
+    design = build_design(state)
+    design_values = design.to_numpy(dtype=float)
     local_cross_products = LocalCrossProducts(
         local_sample_count=len(data_values),
+        design_columns=[str(c) for c in design.columns],
         XtransposeX_local=np.matmul(design_values.T, design_values),
         Xtransposey_local=np.matmul(design_values.T, data_values),
         lambda_value=LAMBDA_VALUE,
@@ -77,12 +114,37 @@ def compute_local_cross_products(site_columns: SiteColumns, state: SiteState):
     return with_state(local_cross_products, state)
 
 
+def encode_covariates(
+    covariates: pd.DataFrame, category_levels: Dict[str, List[str]]
+) -> pd.DataFrame:
+    """Cast covariates to float, dummy-coding categorical ones.
+
+    Each categorical covariate gets one 0/1 column per level except the first
+    (reference) level, using the levels shared by every site.
+    """
+    columns = {}
+    for name in covariates.columns:
+        if name in category_levels:
+            values = covariates[name].astype(str)
+            for level in category_levels[name][1:]:
+                columns[f"{name}_{level}"] = (values == level).astype(float)
+        else:
+            columns[name] = covariates[name].astype(float)
+
+    if len(columns) != sum(
+        len(category_levels[name]) - 1 if name in category_levels else 1
+        for name in covariates.columns
+    ):
+        raise ValueError("Encoded covariate column names collide; rename a covariate")
+    return pd.DataFrame(columns, index=covariates.index).reset_index(drop=True)
+
+
 def compute_local_variance(regression: GlobalRegression, state: SiteState):
     """Compute this site's contribution to the pooled residual variance.
 
     Args:
         regression: Global regression coefficients and grand mean.
-        state: Site inputs and site-indicator columns.
+        state: Encoded site inputs and design layout.
 
     Returns:
         The local variance contribution, caching the regression as state.
@@ -101,15 +163,71 @@ def compute_local_variance(regression: GlobalRegression, state: SiteState):
     )
 
 
-def harmonize_site_data(pooled: PooledVariance, state: SiteState) -> pd.DataFrame:
+def harmonize_site(
+    pooled: PooledVariance,
+    state: SiteState,
+    share_site_summaries: bool = DEFAULT_SHARE_SITE_SUMMARIES,
+    min_site_summary_n: int = DEFAULT_MIN_SITE_SUMMARY_N,
+):
+    """Harmonize this site's data and optionally share its summary statistics.
+
+    Args:
+        pooled: Global pooled residual variance.
+        state: Site inputs, design layout, and global regression.
+        share_site_summaries: Whether to share per-ROI means and SDs.
+        min_site_summary_n: Smallest site size whose summaries may be shared.
+
+    Returns:
+        The site's shared summary (empty unless sharing is enabled and the site
+        is large enough), caching the harmonization result as state.
+    """
+    harmonization = harmonize_site_data(pooled, state)
+    state = replace(state, harmonization=harmonization)
+
+    if not share_site_summaries:
+        return with_state(SiteSummaryShare(), state)
+    if len(state.data) < min_site_summary_n:
+        return with_state(SiteSummaryShare(withheld=True), state)
+    return with_state(
+        SiteSummaryShare(summary=summarize_site(state.data, harmonization.harmonized)),
+        state,
+    )
+
+
+def summarize_site(data: pd.DataFrame, harmonized: pd.DataFrame) -> ROISummary:
+    """Return per-ROI means and SDs of the data before and after harmonization."""
+    mean_before, sd_before = roi_mean_sd(data)
+    mean_after, sd_after = roi_mean_sd(harmonized)
+    return ROISummary(
+        sample_count=len(data),
+        mean_before=mean_before,
+        sd_before=sd_before,
+        mean_after=mean_after,
+        sd_after=sd_after,
+    )
+
+
+def roi_mean_sd(frame: pd.DataFrame) -> Tuple[np.ndarray, np.ndarray]:
+    """Return the per-column mean and sample SD (NaN for fewer than 2 rows)."""
+    values = frame.to_numpy(dtype=float)
+    mean = values.mean(axis=0)
+    if len(values) < 2:
+        return mean, np.full(values.shape[1], np.nan)
+    return mean, values.std(axis=0, ddof=1)
+
+
+def harmonize_site_data(
+    pooled: PooledVariance, state: SiteState
+) -> HarmonizationResult:
     """Remove site effects from this site's data with empirical Bayes.
 
     Args:
         pooled: Global pooled residual variance.
-        state: Site inputs, site-indicator columns, and global regression.
+        state: Site inputs, design layout, and global regression.
 
     Returns:
-        The harmonized data, with the same columns as the input data file.
+        The harmonized data, with the same columns as the input data file,
+        and the estimated additive and multiplicative site effects.
     """
     regression = state.regression
     design = build_design(state).to_numpy(dtype=float)
@@ -150,15 +268,20 @@ def harmonize_site_data(pooled: PooledVariance, state: SiteState) -> pd.DataFram
         var_pooled,
         local_n_sample,
     )
-    return pd.DataFrame(np.transpose(bayesdata), columns=state.data.columns)
+    return HarmonizationResult(
+        harmonized=pd.DataFrame(np.transpose(bayesdata), columns=state.data.columns),
+        gamma_star=np.asarray(gamma_star, dtype=float).reshape(-1),
+        delta_star=np.asarray(delta_star, dtype=float).reshape(-1),
+        pooled_sd=np.sqrt(np.asarray(var_pooled, dtype=float)).reshape(-1),
+    )
 
 
 def build_design(state: SiteState) -> pd.DataFrame:
     """Return the site's covariates with its site-indicator columns appended."""
     return add_site_covariates(
         state.covariates,
-        state.site_columns.site_covar_list,
-        state.site_columns.token_columns[state.token],
+        state.layout.site_covar_list,
+        state.layout.token_columns[state.token],
     )
 
 
@@ -211,34 +334,6 @@ def interpolate_missing_data(Y: np.ndarray, X: np.ndarray) -> np.ndarray:
                 Y[j, is_na] = np.nanmean(Y_j)
 
     return Y
-
-
-def identify_categorical_covariates(covariates: pd.DataFrame) -> List[type]:
-    """Return the Python type of each covariate, from the first row."""
-    return [type(value) for value in list(covariates.values[0, :])]
-
-
-def encode_covariates(
-    covariates: pd.DataFrame, covariate_categories: List[type]
-) -> pd.DataFrame:
-    """One-hot encode string covariates and cast the rest to float."""
-    column_names = []
-    blocks = []
-    covariate_names = np.expand_dims(covariates.columns.values, axis=1)
-
-    for idx, covariate_category in enumerate(covariate_categories):
-        column_values = np.expand_dims(covariates.values[:, idx], axis=1)
-        if covariate_category is str:
-            one_hot_encoder = OneHotEncoder().fit(column_values)
-            blocks.append(one_hot_encoder.transform(column_values).toarray())
-            column_names.extend(
-                one_hot_encoder.get_feature_names_out(covariate_names[idx])
-            )
-        else:
-            blocks.append(np.array(list(column_values), dtype=float))
-            column_names.append(covariate_names[idx][0])
-
-    return pd.DataFrame(data=np.hstack(blocks), columns=column_names)
 
 
 def find_non_parametric_adjustments(s_data, gamma_hat, delta_hat):

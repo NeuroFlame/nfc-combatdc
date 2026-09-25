@@ -7,15 +7,20 @@
   "task_result_filters": [],
   "components": [
     {
-      "id": "combat_aggregator",
-      "path": "aggregator.combat_aggregator.DCCombatAggregator",
+      "id": "aggregator",
+      "path": "runtime.aggregator.RuntimeAggregator",
+      "args": {}
+    },
+    {
+      "id": "artifact_transfer",
+      "path": "framework.artifact_transfer.ArtifactTransfer",
       "args": {}
     }
   ],
   "workflows": [
     {
-      "id": "combat_controller",
-      "path": "controller.combat_controller.DCCombatController",
+      "id": "controller",
+      "path": "runtime.controller.RuntimeController",
       "args": {}
     }
   ]

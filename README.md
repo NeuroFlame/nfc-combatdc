@@ -16,17 +16,16 @@
 - [Configurations](#configurations)
   - [Parameters file](#parameters-file)
     - [Schema](#schema)
-  - [Logger Configurations](#logger-configurations)
-    - [Dev Environment](#dev-environment)
-    - [Production Environment](#production-environment)
+  - [Logs](#logs)
 - [Output](#output)
 - [Developer Instructions](#developer-instructions)
 
 
 ## Requirements:
 
-  - Python 3.8.17
-  - NvFlare 2.4.0
+  - Python 3.11
+  - NVFlare 2.8.0
+  - Built on [computation-nvflare-boilerplate](https://github.com/NeuroFlame/computation-nvflare-boilerplate) `0.1.0` (see [`.neuroflame.json`](.neuroflame.json))
 
 ## Overview:
 
@@ -37,7 +36,7 @@ Below are the key steps in the algorithm:
 In our decentralized environment, we have two types of nodes: The first type is the aggregator node, also known as the remote node, which does not hold any data and acts as a storage of intermediate results and performs simple operations such as aggregation. The second node type is the local/regional node where datasets are located.
 
 ### Stage 1 - Local Summary Extraction:
-1. Each participating site runs COINSTAC’s decentralized regression to obtain initial β‑coefficients.
+1. Each participating site runs a local regression to obtain initial β‑coefficients by computing local cross-product matrices (XᵀX and Xᵀy).
 2. Using those coefficients, the site computes its local mean and local variance.
 3. These summary statistics—never raw data—are securely sent to the remote aggregator node.
 
@@ -47,14 +46,14 @@ In our decentralized environment, we have two types of nodes: The first type is 
 
 ### Stage 3 - Site-wise Harmonization:
 1. Each node uses the grand statistics to standardize its own dataset.
-2. It then estimates site‑specific effects via parametric empirical Bayes and adjusts its data accordingly.
+2. It then estimates site‑specific effects via non-parametric empirical Bayes and adjusts its data accordingly.
 3. The result: harmonized, site‑neutral data that remain in place and ready for pooled analysis.
 
 
 ## Data Format Specification:
 
 The computation requires two `csv` files as input:
-1. **Covariates File (`CatCovariates.csv`)**
+1. **Covariates File (`CatCovariate.csv`)**
 2. **Dependent Variables File (`Data.csv`)**
 
 Both files must follow a consistent format, though the specific covariates and dependents may vary from study to study. The computation expects these files to match the covariate and dependent variable names specified in the [`parameters.json`](test_data/server/parameters.json) file.
@@ -101,7 +100,7 @@ Both files must follow a consistent format, though the specific covariates and d
 ## Configurations:
 
 ### Parameters file:
-This file is **loaded** by `combat_controller.py` on the remote node, which then **passes** it to the edge nodes(`executors`) in the computation as `FLContext` Object.
+The framework loads this file on the central node and shares it with every site. The site input loader ([`inputs.py`](app/code/computation/inputs.py)) validates it before any data is read.
 
 Example: [test_data/server/parameters.json](test_data/server/parameters.json)
 
@@ -113,31 +112,35 @@ Example: [test_data/server/parameters.json](test_data/server/parameters.json)
 | `covariate_file` | `string` | ✅ | Covariate file name inside edge node data directory | `"CatCovariate.csv"` |
 | `data_file` | `string` | ✅ | Dependent file name inside edge node data directory | `"Data.csv"` |
 | `combat_algo` | `string` | ✅ | Which type of algorithm to implement during computation | `combatDC` or `combatMegaDC`|
-| `covariates_types` | `object` | ✅ | Datatypes of each column values in covariates file | `3` |
-| `covariates_types.['key_name']` | `string` | ✅ | primitive datatype names supported in `Python 3.8`  | `int`, `float`, `string` or `bool` |
+| `covariates_types` | `object` | ✅ | Maps each covariate column name to its type. Categorical (`str`) columns are dummy-encoded automatically. | `{"isControl": "bool", "age": "float", "sex": "str"}` |
+| `covariates_types.['key_name']` | `string` | ✅ | Primitive type name for each covariate column. | `"int"`, `"float"`, `"str"`, `"bool"` |
 
 
 > Note: In the dependent file, each cell value is assumed to be either empty or of type `float`.
 
-### Logger Configurations:
-The computation creates three categories of log files. First is site logs, which are under `test_output/{site_name}/{site_name}.log`. Second is remote logs, which are under `test_output/remote/remote.log` which are basically `controller` logs. Finally, the aggregator log file is stored in the same location as the remote logs and is specific to the aggregator computation.
-
-#### Dev Environment:
-Set the environment variable LOG_LEVEL with supported values as `info`, `debug`, `error` or `warning`, in [`dockerRun.sh`](./dockerRun.sh#L13)
-
-#### Production Environment:
-Pass the environment variable LOG_LEVEL to the application with supported values as `info`, `debug`, `error` or `warning` in docker run command.
+### Logs:
+The framework writes each site's messages to `<site-id>.log` in that site's output directory, and server-side messages to `aggregator.remote.log`. Set the optional `log_level` computation parameter to `debug`, `info`, `warning`, `error`, or `critical` (default `info`).
 
 ## Output:
 
-Once the computation is completed, it generates the harmonized, site‑dependent CSV files in the `test_output/{site_name}` directory.
+Once the computation is completed, each site's output directory contains a harmonized CSV file named `harmonized_data.csv` and an `index.html` results page linking to it. This file has the same column structure as the input data file, with site-batch effects removed and values on the original measurement scale.
 
 ## Developer Instructions:
-1. Clone the repository
-2. Build the Docker image with the command below:
-    > docker build . -t nvflare-dccombat -f Dockerfile-dev
-3. The above command generates a Docker image with tag `nvflare-dccombat`.
-4. Start the docker container with `./dockerRun.sh` command. Provide necessary execute permission for the above file.
-5. The above will open a shell inside the container. Run the following command to run the computation:
-    > nvflare simulator -c site1,site2 ./app/
-6. Make changes as needed and repeat step 5 to test them.
+The computation logic lives in [`app/code/computation/`](app/code/computation/). The boilerplate owns `app/code/framework/`, `app/code/runtime/`, `app/config/`, `system/`, and the Dockerfiles; update those only by re-running the boilerplate's `scripts/migrate_computation.py`.
+
+| File | Contents |
+|------|----------|
+| [`spec.py`](app/code/computation/spec.py) | Workflow declaration (three local/remote rounds plus the output step) |
+| [`inputs.py`](app/code/computation/inputs.py), [`validation.py`](app/code/computation/validation.py) | Parameter checks, file loading, and type conversion |
+| [`local_math.py`](app/code/computation/local_math.py) | Site-side encoding, interpolation, cross products, variance, and harmonization |
+| [`remote_math.py`](app/code/computation/remote_math.py) | Aggregation of site summaries |
+| [`results.py`](app/code/computation/results.py) | Output file writing |
+| [`types.py`](app/code/computation/types.py) | Values exchanged between rounds and cached site state |
+
+1. Run lint, format checks, and unit tests:
+    > make check
+2. Run a local NVFlare simulation (builds the dev image first; add `--no-build` for source-only changes):
+    > ./run_local_simulation.sh site1,site2
+3. Each site's results are written to `test_output/simulate_job/<site>/`.
+4. Build the production image without publishing it:
+    > ./dockerPush.sh --no-push

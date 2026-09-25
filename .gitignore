@@ -1,9 +1,9 @@
 __pycache__/
 *.py[cod]
-.DS_Store
-.idea
+.ruff_cache/
+.venv/
 simulator_workspace/
-test_output/
+test_output/simulate_job/
 poc-workspace/
-.devcontainer/
-.github/
+job/
+.DS_Store

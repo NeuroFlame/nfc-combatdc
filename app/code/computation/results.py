@@ -1,53 +1,83 @@
-"""Write each site's harmonized data and results page."""
+"""Write each site's harmonized data, covariate copy, and results page."""
 
 import logging
 import os
+import shutil
+from typing import Any, Dict
 
-from .local_math import harmonize_site_data
-from .types import PooledVariance, SiteState
+from .diagnostics import harmonized_data_is_reliable
+from .report import build_report
+from .types import CrossSiteSummaries, SiteState
 
 HARMONIZED_DATA_FILE = "harmonized_data.csv"
 RESULTS_PAGE_FILE = "index.html"
 
 
-def write_harmonized_data(
-    pooled: PooledVariance,
+def write_outputs(
+    summaries: CrossSiteSummaries,
     state: SiteState,
+    parameters: Dict[str, Any],
+    data_dir: str,
     output_dir: str,
     logger: logging.Logger,
 ) -> None:
-    """Harmonize this site's data and write it with a results page.
+    """Write this site's harmonized data, covariate copy, and results page.
 
     The CSV is written without an index column, so it is written directly
-    rather than through the framework's standard CSV writer.
+    rather than through the framework's standard CSV writer. It is not written
+    when the pooled design matrix is rank-deficient, because the harmonized
+    values are then unreliable; the report explains why. This site's covariate
+    file is copied unchanged next to it for convenience; it stays at the site.
 
     Args:
-        pooled: Global pooled residual variance.
-        state: Site inputs, site-indicator columns, and global regression.
+        summaries: Cross-site summaries (empty when sharing is disabled).
+        state: Site state after harmonization.
+        parameters: Computation parameters.
+        data_dir: Site input directory.
         output_dir: Site output directory.
         logger: Site logger.
     """
-    harmonized = harmonize_site_data(pooled, state)
-    output_path = os.path.join(output_dir, HARMONIZED_DATA_FILE)
-    harmonized.to_csv(output_path, index=False)
+    if harmonized_data_is_reliable(state):
+        state.harmonization.harmonized.to_csv(
+            os.path.join(output_dir, HARMONIZED_DATA_FILE), index=False
+        )
+    else:
+        logger.error(
+            "Not writing %s: the design matrix is rank-deficient; see %s",
+            HARMONIZED_DATA_FILE,
+            RESULTS_PAGE_FILE,
+        )
 
+    covariate_file_name = copy_covariate_file(
+        data_dir, parameters["covariate_file"], output_dir
+    )
+
+    report = build_report(
+        state, summaries, parameters, HARMONIZED_DATA_FILE, covariate_file_name
+    )
     with open(
         os.path.join(output_dir, RESULTS_PAGE_FILE), "w", encoding="utf-8"
     ) as results_page:
-        results_page.write(build_results_page(HARMONIZED_DATA_FILE))
-    logger.info("Wrote harmonized data to %s", output_path)
+        results_page.write(report)
+    logger.info("Wrote results to %s", output_dir)
 
 
-def build_results_page(output_file_name: str) -> str:
-    """Return an HTML page linking to the harmonized data file."""
-    return f"""<!DOCTYPE html>
-<html>
-<head>
-    <title>Combat DC Results</title>
-</head>
-<body>
-    <h1>Results</h1>
-    <p><a href="{output_file_name}">Download {output_file_name}</a></p>
-</body>
-</html>
-"""
+def copy_covariate_file(data_dir: str, covariate_file: str, output_dir: str) -> str:
+    """Copy the site's covariate file into the output directory unchanged.
+
+    Args:
+        data_dir: Site input directory.
+        covariate_file: Covariate file path relative to ``data_dir``.
+        output_dir: Site output directory.
+
+    Returns:
+        The copy's file name, prefixed with ``covariates_`` if it would
+        otherwise replace another output file.
+    """
+    name = os.path.basename(covariate_file)
+    if name in (HARMONIZED_DATA_FILE, RESULTS_PAGE_FILE):
+        name = f"covariates_{name}"
+    shutil.copyfile(
+        os.path.join(data_dir, covariate_file), os.path.join(output_dir, name)
+    )
+    return name

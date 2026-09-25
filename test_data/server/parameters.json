@@ -6,5 +6,6 @@
     "isControl": "bool",
     "age": "float",
     "sex": "str"
-  }
+  },
+  "log_level": "debug"
 }
